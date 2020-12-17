@@ -46,6 +46,7 @@ public class SubtitleSpeechSynchronizerHelper {
 				System.exit(0);
 			} else {
 				List<String> foldersToWatch = Files.readAllLines(Paths.get(watchFoldersFile.getAbsolutePath()));
+				System.out.println("Found " + foldersToWatch + " folders to watch.");
 				for (String folderString : foldersToWatch) {
 					if (new File(folderString).exists()) {
 						new Thread(new Runnable() {
