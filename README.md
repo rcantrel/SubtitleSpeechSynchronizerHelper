@@ -5,9 +5,9 @@ This was a quick and dirty program.
 
 ## Ubuntu:
 ### subsync install (+ removable media)
-#### sudo snap install subsync --classic
-#### sudo snap install subsync:removable-media
-#### sudo snap connect subsync:removable-media
+sudo snap install subsync --classic
+sudo snap install subsync:removable-media
+sudo snap connect subsync:removable-media
 
 ## Windows:
 https://subsync.online/en/download.html  (msi installer)
