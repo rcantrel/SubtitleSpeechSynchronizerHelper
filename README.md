@@ -28,6 +28,16 @@ Execute again to begin watching.
 You might want to start a service to kick this off when your computer restarts. You can follow this guide:
 https://dzone.com/articles/run-your-java-application-as-a-service-on-ubuntu
 I have included subsync.service and SubtitleSpeechSynchronizerHelper.sh to save some typing.
+sudo systemctl start subsync
+sudo systemctl stop subsync
+sudo systemctl status subsync
+
+
+## SubNuker
+sudo pip3 install subnuker
+
+## Find all unique file types recursively 
+find . -type f | sed -e 's/.*\.//' | sed -e 's/.*\///' | sort -u
 
 
 

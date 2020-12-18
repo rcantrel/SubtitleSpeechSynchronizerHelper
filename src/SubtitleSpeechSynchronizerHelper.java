@@ -3,6 +3,7 @@ import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.URLConnection;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -14,6 +15,7 @@ import java.nio.file.WatchEvent;
 import java.nio.file.WatchKey;
 import java.nio.file.WatchService;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +35,8 @@ public class SubtitleSpeechSynchronizerHelper {
 	private static final String WINDOWS_PATH = "C:/Program Files/subsync/";
 	private WatchService watcher = null;
 	private Map<WatchKey, Path> keys = null;
+	private List<String> processingSrtFile = new ArrayList<>();
+	private static final List<String> VIDEO_EXTENSIONS = Arrays.asList(new String[]{"avi", "divx", "m4v", "mkv", "mp4", "mpg", "wmv"});
 
 	/**
 	 * @param args
@@ -153,12 +157,12 @@ public class SubtitleSpeechSynchronizerHelper {
 				Path name = ((WatchEvent<Path>) event).context();
 				Path child = dir.resolve(name);
 
-				// print out event
-				System.out.format("%s: %s\n", event.kind().name(), child);
-
+				String filePath = child.toString();
 				// if directory is created, and watching recursively, then
 				// register it and its sub-directories
-				if (kind == StandardWatchEventKinds.ENTRY_CREATE || kind == StandardWatchEventKinds.ENTRY_MODIFY) {
+				if ((kind == StandardWatchEventKinds.ENTRY_CREATE || kind == StandardWatchEventKinds.ENTRY_MODIFY)  && !processingSrtFile.contains(filePath)) {
+					// print out event
+					System.out.format("%s: %s\n", event.kind().name(), child);
 					try {
 						if (Files.isDirectory(child)) {
 							walkAndRegisterDirectories(child);
@@ -172,24 +176,28 @@ public class SubtitleSpeechSynchronizerHelper {
 									public void run() {
 										try {
 											Thread.sleep(5000);
-											String srtString = child.toString();
-											File srtFile = new File(srtString);
+											File srtFile = new File(filePath);
 
 											String[] videoFiles = child.getParent().toFile().list(new FilenameFilter() {
 												@Override
 												public boolean accept(File dir, String name) {
-													return name.startsWith(srtFile.getName().replace(".en.srt", "")) && !name.toLowerCase().endsWith(".srt");
+													return name.startsWith(srtFile.getName().replace(".en.srt", "")) && VIDEO_EXTENSIONS.contains(getFileExtension(name));
 												}
 											});
 
-											if (videoFiles.length == 1) {
+											if (videoFiles.length == 1 && !processingSrtFile.contains(filePath)) {
+												processingSrtFile.add(filePath);
 												if (OSUtils.getInstance().isWindows()) {
-													executeCommand("\"" + WINDOWS_PATH + "subsync-cmd.exe\" --cli sync --sub \"" + srtString + "\" --ref \"" + child.getParent().toString() + "\\" + videoFiles[0] + "\" --out \"" + srtString + "\" --overwrite");
+													executeCommand("\"" + WINDOWS_PATH + "subsync-cmd.exe\" --cli sync --sub \"" + filePath + "\" --ref \"" + child.getParent().toString() + "\\" + videoFiles[0] + "\" --out \"" + filePath + "\" --overwrite");
 												} else {
-													executeCommand("subsync --cli sync --sub " + srtString.replaceAll(" ", "\\\\ ") + " --ref " + child.getParent().toString() + "\\" + videoFiles[0].replaceAll(" ", "\\\\ ") + " --out " + srtString.replaceAll(" ", "\\\\ ") + " --overwrite");
+													executeCommand("subsync --cli sync --sub " + filePath.replaceAll(" ", "\\\\ ") + " --ref " + child.getParent().toString() + "\\" + videoFiles[0].replaceAll(" ", "\\\\ ") + " --out " + filePath.replaceAll(" ", "\\\\ ") + " --overwrite");
+													executeCommand("subnuker --regex " + filePath.replaceAll(" ", "\\\\ "));
 												}
+												processingSrtFile.remove(filePath);
+											} else if(videoFiles.length != 1) {
+												System.out.println(videoFiles.length + " video files found for " + filePath + (videoFiles.length > 0 ? "\n" + Arrays.toString(videoFiles) : ""));
 											} else {
-												System.out.println(videoFiles.length + " video files found for " + srtString + (videoFiles.length > 0 ? "\n" + Arrays.toString(videoFiles) : ""));
+												System.out.println("Unable to process: " + filePath );
 											}
 										} catch (Exception e) {
 											e.printStackTrace();
@@ -216,6 +224,11 @@ public class SubtitleSpeechSynchronizerHelper {
 			}
 		}
 	}
+	
+	public static boolean isVideoFile(String path) {
+	    String mimeType = URLConnection.guessContentTypeFromName(path);
+	    return mimeType != null && mimeType.startsWith("video");
+	}
 
 	public Optional<String> getExtensionByStringHandling(String filename) {
 		return Optional.ofNullable(filename).filter(f -> f.contains(".")).map(f -> f.substring(filename.lastIndexOf(".") + 1));
@@ -235,5 +248,12 @@ public class SubtitleSpeechSynchronizerHelper {
 		proc.waitFor();
 		System.out.println("Execution finished");
 
+	}
+	private String getFileExtension(String name) {
+	    int lastIndexOf = name.lastIndexOf(".");
+	    if (lastIndexOf == -1) {
+	        return ""; // empty extension
+	    }
+	    return name.substring(lastIndexOf);
 	}
 }
