@@ -27,6 +27,7 @@ Execute again to begin watching.
 ## Additional thoughts
 You might want to start a service to kick this off when your computer restarts. You can follow this guide:
 https://dzone.com/articles/run-your-java-application-as-a-service-on-ubuntu
+I have included subsync.service and SubtitleSpeechSynchronizerHelper.sh to save some typing.
 
 
 
