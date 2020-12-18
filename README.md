@@ -1,5 +1,5 @@
-# SubtitleSpeechSynchronizerHelper
-Watches folders for new subtitles and executes Subtitle Speech Synchronizer on video/subtitle.  Great addition to SickChill with auto subtitles turned on.
+# Subtitle Speech Synchronizer Helper
+Watches folders for new subtitles and executes Subtitle Speech Synchronizer (subsync) on video/subtitle.  Great addition to SickChill with auto subtitles turned on.
 This was a quick and dirty program.  
 
 
