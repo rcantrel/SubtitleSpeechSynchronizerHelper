@@ -1,9 +1,6 @@
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FilenameFilter;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.net.URLConnection;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -36,7 +33,7 @@ public class SubtitleSpeechSynchronizerHelper {
 	private WatchService watcher = null;
 	private Map<WatchKey, Path> keys = null;
 	private List<String> processingSrtFile = new ArrayList<>();
-	private static final List<String> VIDEO_EXTENSIONS = Arrays.asList(new String[]{"avi", "divx", "m4v", "mkv", "mp4", "mpg", "wmv"});
+	private static final List<String> VIDEO_EXTENSIONS = Arrays.asList(new String[] { "avi", "divx", "m4v", "mkv", "mp4", "mpg", "wmv" });
 
 	/**
 	 * @param args
@@ -160,9 +157,8 @@ public class SubtitleSpeechSynchronizerHelper {
 				String filePath = child.toString();
 				// if directory is created, and watching recursively, then
 				// register it and its sub-directories
-				if ((kind == StandardWatchEventKinds.ENTRY_CREATE || kind == StandardWatchEventKinds.ENTRY_MODIFY)  && !processingSrtFile.contains(filePath)) {
+				if ((kind == StandardWatchEventKinds.ENTRY_CREATE || kind == StandardWatchEventKinds.ENTRY_MODIFY) && !processingSrtFile.contains(filePath)) {
 					// print out event
-					System.out.format("%s: %s\n", event.kind().name(), child);
 					try {
 						if (Files.isDirectory(child)) {
 							walkAndRegisterDirectories(child);
@@ -178,26 +174,33 @@ public class SubtitleSpeechSynchronizerHelper {
 											Thread.sleep(5000);
 											File srtFile = new File(filePath);
 
+											System.out.println("Looking for matching video files.");
 											String[] videoFiles = child.getParent().toFile().list(new FilenameFilter() {
 												@Override
 												public boolean accept(File dir, String name) {
-													return name.startsWith(srtFile.getName().replace(".en.srt", "")) && VIDEO_EXTENSIONS.contains(getFileExtension(name));
+													Optional<String> extensionOption = getExtensionByStringHandling(name);
+													return (name.startsWith(srtFile.getName().replace(".srt", "")) || name.startsWith(srtFile.getName().replace(".en.srt", ""))) && extensionOption.isPresent() && VIDEO_EXTENSIONS.contains(extensionOption.get());
 												}
 											});
 
 											if (videoFiles.length == 1 && !processingSrtFile.contains(filePath)) {
+												System.out.format("%s: %s\n", event.kind().name(), child);
 												processingSrtFile.add(filePath);
 												if (OSUtils.getInstance().isWindows()) {
 													executeCommand("\"" + WINDOWS_PATH + "subsync-cmd.exe\" --cli sync --sub \"" + filePath + "\" --ref \"" + child.getParent().toString() + "\\" + videoFiles[0] + "\" --out \"" + filePath + "\" --overwrite");
 												} else {
-													executeCommand("subsync --cli sync --sub " + filePath.replaceAll(" ", "\\\\ ") + " --ref " + child.getParent().toString() + "\\" + videoFiles[0].replaceAll(" ", "\\\\ ") + " --out " + filePath.replaceAll(" ", "\\\\ ") + " --overwrite");
-													executeCommand("subnuker --regex " + filePath.replaceAll(" ", "\\\\ "));
+													String[] subsyncCmds = {"subsync", "--cli", "sync", "--sub-file", filePath, "--ref", (child.getParent().toString() + "/" + videoFiles[0]), "--out", filePath, "--overwrite"};
+													executeCommand(subsyncCmds);
+													//executeCommand("subsync", "--cli sync --sub-file \"" + filePath + "\" --ref \"" + child.getParent().toString() + "/" + videoFiles[0] + "\" --out \"" + filePath + "\" --overwrite");
+													//executeCommand("subsync --cli sync --sub " + filePath.replaceAll(" ", "\\\\ ") + " --ref " + (child.getParent().toString() + "/" + videoFiles[0]).replaceAll(" ", "\\\\ ") + " --out " + filePath.replaceAll(" ", "\\\\ ") + " --overwrite");
+													//executeCommand("subnuker", "--regex \"" + filePath + "\" --yes");
+													
+													String[] subnukerCmds = {"subnuker", "--regex", filePath, "--yes"};
+													executeCommand(subnukerCmds);
 												}
 												processingSrtFile.remove(filePath);
-											} else if(videoFiles.length != 1) {
+											} else if (videoFiles.length != 1) {
 												System.out.println(videoFiles.length + " video files found for " + filePath + (videoFiles.length > 0 ? "\n" + Arrays.toString(videoFiles) : ""));
-											} else {
-												System.out.println("Unable to process: " + filePath );
 											}
 										} catch (Exception e) {
 											e.printStackTrace();
@@ -224,36 +227,100 @@ public class SubtitleSpeechSynchronizerHelper {
 			}
 		}
 	}
-	
-	public static boolean isVideoFile(String path) {
-	    String mimeType = URLConnection.guessContentTypeFromName(path);
-	    return mimeType != null && mimeType.startsWith("video");
-	}
 
+	/**
+	 * Returns the extension is a Optional object
+	 * 
+	 * @param filename
+	 * @return
+	 */
 	public Optional<String> getExtensionByStringHandling(String filename) {
 		return Optional.ofNullable(filename).filter(f -> f.contains(".")).map(f -> f.substring(filename.lastIndexOf(".") + 1));
 	}
 
-	public void executeCommand(String command) throws Exception {
+	/**
+	 * Executes a system command
+	 * 
+	 * @param command
+	 * @throws Exception
+	 */
+	public void executeCommand(String command) {
 		System.out.println("Executing: " + command);
-		Process proc = Runtime.getRuntime().exec(command);
-		// Read the output
-		BufferedReader reader = new BufferedReader(new InputStreamReader(proc.getInputStream()));
+		try {
+			ProcessBuilder pb = new ProcessBuilder(command);
+			Process proc = pb.start();
 
-		String line = "";
-		while ((line = reader.readLine()) != null) {
-			System.out.print(line + "\n");
+			// Process proc = Runtime.getRuntime().exec(command);
+			StreamGobbler errorGobbler = new StreamGobbler(proc.getErrorStream(), "ERROR");
+
+			// any output?
+			StreamGobbler outputGobbler = new StreamGobbler(proc.getInputStream(), "OUTPUT");
+
+			// start gobblers
+			outputGobbler.start();
+			errorGobbler.start();
+
+			proc.waitFor();
+
+			System.out.println("Execution finished");
+		} catch (Exception e) {
+			e.printStackTrace();
+			System.out.println("Execution failed.");
 		}
-
-		proc.waitFor();
-		System.out.println("Execution finished");
-
 	}
-	private String getFileExtension(String name) {
-	    int lastIndexOf = name.lastIndexOf(".");
-	    if (lastIndexOf == -1) {
-	        return ""; // empty extension
-	    }
-	    return name.substring(lastIndexOf);
+
+	/**
+	 * Executes a system command
+	 * 
+	 * @param command
+	 * @throws Exception
+	 */
+	public void executeCommand(String[] command) {
+		
+		try {
+			ProcessBuilder pb = new ProcessBuilder(command);
+			System.out.println("Executing: " + getRunnableCommand(pb));
+			Process proc = pb.start();
+
+			// Process proc = Runtime.getRuntime().exec(command);
+			StreamGobbler errorGobbler = new StreamGobbler(proc.getErrorStream(), "ERROR");
+
+			// any output?
+			StreamGobbler outputGobbler = new StreamGobbler(proc.getInputStream(), "OUTPUT");
+
+			// start gobblers
+			outputGobbler.start();
+			errorGobbler.start();
+
+			proc.waitFor();
+
+			System.out.println("Execution finished");
+		} catch (Exception e) {
+			e.printStackTrace();
+			System.out.println("Execution failed.");
+		}
+	}
+
+	private String getRunnableCommand(ProcessBuilder processBuilder) {
+		List<String> commandsList = processBuilder.command();
+		StringBuilder runnableCommandBuilder = new StringBuilder();
+		int commandIndex = 0;
+		for (String command : commandsList) {
+			if (command.contains(" ")) {
+				runnableCommandBuilder.append("\"");
+			}
+			runnableCommandBuilder.append(command);
+
+			if (command.contains(" ")) {
+				runnableCommandBuilder.append("\"");
+			}
+
+			if (commandIndex != commandsList.size() - 1) {
+				runnableCommandBuilder.append(" ");
+			}
+
+			commandIndex++;
+		}
+		return runnableCommandBuilder.toString();
 	}
 }
